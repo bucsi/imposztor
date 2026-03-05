@@ -188,3 +188,49 @@ button:hover {
   width: auto;
   padding: 15px 40px;
 }
+
+.player-card {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 15px;
+  padding: 15px 20px;
+  color: #1a1a2e;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  max-width: 350px;
+  width: calc(100% - 40px);
+}
+
+.player-card h3 {
+  font-size: 0.9rem;
+  margin-bottom: 10px;
+  color: #0f3460;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  text-align: center;
+}
+
+#gamePlayerList {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
+#gamePlayerList li {
+  padding: 8px 12px;
+  background: #f0f0f0;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+#gamePlayerList li.leader::before {
+  content: "👑";
+  font-size: 1rem;
+}

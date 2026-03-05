@@ -6,6 +6,7 @@ const gameScreen = document.getElementById('gameScreen');
 const nameInput = document.getElementById('nameInput');
 const joinBtn = document.getElementById('joinBtn');
 const playerList = document.getElementById('playerList');
+const gamePlayerList = document.getElementById('gamePlayerList');
 const startBtn = document.getElementById('startBtn');
 const waitingText = document.getElementById('waitingText');
 const wordDisplay = document.getElementById('wordDisplay');
@@ -14,12 +15,34 @@ const nextRoundBtn = document.getElementById('nextRoundBtn');
 
 let isLeader = false;
 
-function showScreen(screen) {
+const showScreen = (screen) => {
   joinScreen.classList.add('hidden');
   lobbyScreen.classList.add('hidden');
   gameScreen.classList.add('hidden');
   screen.classList.remove('hidden');
-}
+};
+
+const updatePlayerList = (players, listElement) => {
+  listElement.innerHTML = '';
+  players.forEach((player) => {
+    const li = document.createElement('li');
+    li.textContent = player.name;
+    if (player.isLeader) {
+      li.classList.add('leader');
+    }
+    listElement.appendChild(li);
+  });
+};
+
+const updateLeaderUI = () => {
+  if (isLeader) {
+    startBtn.classList.remove('hidden');
+    waitingText.classList.add('hidden');
+  } else {
+    startBtn.classList.add('hidden');
+    waitingText.classList.remove('hidden');
+  }
+};
 
 joinBtn.addEventListener('click', () => {
   const name = nameInput.value.trim();
@@ -49,15 +72,8 @@ socket.on('joined', (data) => {
 });
 
 socket.on('playerList', (players) => {
-  playerList.innerHTML = '';
-  players.forEach((player) => {
-    const li = document.createElement('li');
-    li.textContent = player.name;
-    if (player.isLeader) {
-      li.classList.add('leader');
-    }
-    playerList.appendChild(li);
-  });
+  updatePlayerList(players, playerList);
+  updatePlayerList(players, gamePlayerList);
 });
 
 socket.on('leaderChanged', (newLeaderId) => {
@@ -98,13 +114,3 @@ socket.on('roundStarted', (data) => {
 socket.on('error', (message) => {
   alert(message);
 });
-
-function updateLeaderUI() {
-  if (isLeader) {
-    startBtn.classList.remove('hidden');
-    waitingText.classList.add('hidden');
-  } else {
-    startBtn.classList.add('hidden');
-    waitingText.classList.remove('hidden');
-  }
-}
