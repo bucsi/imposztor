@@ -101,6 +101,9 @@ io.on('connection', (socket) => {
       firstPlayerId,
     };
 
+    // Emit updated player list with first player indicator
+    io.emit('playerList', getPlayerList());
+
     for (const [id] of players.entries()) {
       const isImposter = id === imposterId;
       const isFirst = id === firstPlayerId;
