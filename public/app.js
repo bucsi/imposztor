@@ -38,9 +38,11 @@ const updateLeaderUI = () => {
   if (isLeader) {
     startBtn.classList.remove('hidden');
     waitingText.classList.add('hidden');
+    nextRoundBtn.classList.remove('hidden');
   } else {
     startBtn.classList.add('hidden');
     waitingText.classList.remove('hidden');
+    nextRoundBtn.classList.add('hidden');
   }
 };
 
@@ -104,11 +106,7 @@ socket.on('roundStarted', (data) => {
     firstPlayerBadge.classList.add('hidden');
   }
 
-  if (isLeader) {
-    nextRoundBtn.classList.remove('hidden');
-  } else {
-    nextRoundBtn.classList.add('hidden');
-  }
+  updateLeaderUI();
 });
 
 socket.on('error', (message) => {

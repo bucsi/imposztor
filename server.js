@@ -76,7 +76,12 @@ io.on('connection', (socket) => {
 
   socket.on('startRound', () => {
     const player = players.get(socket.id);
-    if (!player?.isLeader) return;
+    console.log(`startRound called by ${socket.id}, player:`, player);
+
+    if (!player?.isLeader) {
+      console.log(`Player is not leader. isLeader: ${player?.isLeader}`);
+      return;
+    }
 
     if (players.size < 2) {
       socket.emit('error', 'Legalább 2 játékos kell a játékhoz!');
