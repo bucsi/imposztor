@@ -1,5 +1,6 @@
 {
   "name": "imposztor",
+  "type": "module",
   "version": "1.0.0",
   "description": "Multiplayer imposztor word game with Hungarian words",
   "main": "server.js",

@@ -1,45 +1,47 @@
-const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
-const path = require('path');
-const fs = require('fs');
+import express from 'express';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import { readFile } from 'fs/promises';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const app = express();
-const server = http.createServer(app);
+const server = createServer(app);
 const io = new Server(server);
 
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(join(__dirname, 'public')));
 
-const words = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'words.json'), 'utf8'));
+const words = JSON.parse(
+  await readFile(join(__dirname, 'data', 'words.json'), 'utf8')
+);
 
 const players = new Map();
 let currentRound = null;
 
-function getPlayerList() {
-  return Array.from(players.entries()).map(([id, player]) => ({
+const getPlayerList = () =>
+  Array.from(players.entries(), ([id, player]) => ({
     id,
     name: player.name,
-    isLeader: player.isLeader
+    isLeader: player.isLeader,
   }));
-}
 
-function assignNewLeader() {
+const assignNewLeader = () => {
   if (players.size === 0) return;
 
   const firstPlayer = players.entries().next().value;
-  if (firstPlayer) {
-    const [id, player] = firstPlayer;
-    player.isLeader = true;
-    io.emit('leaderChanged', id);
-  }
-}
+  if (!firstPlayer) return;
 
-function hasLeader() {
-  for (const player of players.values()) {
-    if (player.isLeader) return true;
-  }
-  return false;
-}
+  const [id, player] = firstPlayer;
+  player.isLeader = true;
+  io.emit('leaderChanged', id);
+};
+
+const hasLeader = () => Array.from(players.values()).some((p) => p.isLeader);
+
+const pickRandom = (array) => array[Math.floor(Math.random() * array.length)];
 
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
@@ -57,7 +59,7 @@ io.on('connection', (socket) => {
       socket.emit('roundStarted', {
         word: isImposter ? currentRound.similarWord : currentRound.word,
         isImposter,
-        isFirst
+        isFirst,
       });
     }
 
@@ -66,51 +68,53 @@ io.on('connection', (socket) => {
 
   socket.on('startRound', () => {
     const player = players.get(socket.id);
-    if (!player || !player.isLeader) return;
+    if (!player?.isLeader) return;
 
     if (players.size < 2) {
       socket.emit('error', 'Legalább 2 játékos kell a játékhoz!');
       return;
     }
 
-    const wordPair = words[Math.floor(Math.random() * words.length)];
-    const playerIds = Array.from(players.keys());
-    const imposterId = playerIds[Math.floor(Math.random() * playerIds.length)];
-    const firstPlayerId = playerIds[Math.floor(Math.random() * playerIds.length)];
+    const wordPair = pickRandom(words);
+    const playerIds = [...players.keys()];
+    const imposterId = pickRandom(playerIds);
+    const firstPlayerId = pickRandom(playerIds);
 
     currentRound = {
       word: wordPair.word,
       similarWord: wordPair.similar,
       imposterId,
-      firstPlayerId
+      firstPlayerId,
     };
 
-    for (const [id, p] of players.entries()) {
+    for (const [id] of players.entries()) {
       const isImposter = id === imposterId;
       const isFirst = id === firstPlayerId;
       io.to(id).emit('roundStarted', {
         word: isImposter ? wordPair.similar : wordPair.word,
         isImposter,
-        isFirst
+        isFirst,
       });
     }
 
-    console.log(`Round started. Word: ${wordPair.word}, Imposztor: ${players.get(imposterId).name}`);
+    console.log(
+      `Round started. Word: ${wordPair.word}, Imposztor: ${players.get(imposterId).name}`
+    );
   });
 
   socket.on('disconnect', () => {
     const player = players.get(socket.id);
-    if (player) {
-      const wasLeader = player.isLeader;
-      players.delete(socket.id);
+    if (!player) return;
 
-      if (wasLeader && players.size > 0) {
-        assignNewLeader();
-      }
+    const wasLeader = player.isLeader;
+    players.delete(socket.id);
 
-      io.emit('playerList', getPlayerList());
-      console.log(`${player.name} left. Players: ${players.size}`);
+    if (wasLeader && players.size > 0) {
+      assignNewLeader();
     }
+
+    io.emit('playerList', getPlayerList());
+    console.log(`${player.name} left. Players: ${players.size}`);
   });
 });
 
