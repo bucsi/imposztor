@@ -218,6 +218,7 @@ button:hover {
   flex-wrap: wrap;
   gap: 8px;
   justify-content: center;
+  min-height: 20px;
 }
 
 #gamePlayerList li {

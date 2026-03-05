@@ -13,6 +13,8 @@ const wordDisplay = document.getElementById('wordDisplay');
 const firstPlayerBadge = document.getElementById('firstPlayerBadge');
 const nextRoundBtn = document.getElementById('nextRoundBtn');
 
+console.log('gamePlayerList element:', gamePlayerList);
+
 let isLeader = false;
 
 const showScreen = (screen) => {
@@ -23,6 +25,11 @@ const showScreen = (screen) => {
 };
 
 const updatePlayerList = (players, listElement) => {
+  if (!listElement) {
+    console.log('updatePlayerList called with null element');
+    return;
+  }
+  console.log('Updating player list:', players, 'element:', listElement.id);
   listElement.innerHTML = '';
   players.forEach((player) => {
     const li = document.createElement('li');
@@ -32,6 +39,7 @@ const updatePlayerList = (players, listElement) => {
     }
     listElement.appendChild(li);
   });
+  console.log('Player list updated, children:', listElement.children.length);
 };
 
 const updateLeaderUI = () => {
