@@ -122,6 +122,39 @@ io.on('connection', (socket) => {
     const wasLeader = player.isLeader;
     players.delete(socket.id);
 
+    // If a round is active and the disconnected player was involved
+    if (currentRound) {
+      const wasImposter = currentRound.imposterId === socket.id;
+      const wasFirstPlayer = currentRound.firstPlayerId === socket.id;
+
+      if (wasImposter || wasFirstPlayer) {
+        // Reassign roles if the disconnected player had a special role
+        const remainingPlayerIds = [...players.keys()];
+
+        if (remainingPlayerIds.length > 0) {
+          if (wasImposter) {
+            currentRound.imposterId = pickRandom(remainingPlayerIds);
+          }
+          if (wasFirstPlayer) {
+            currentRound.firstPlayerId = pickRandom(remainingPlayerIds);
+          }
+
+          // Notify all players of the updated round state
+          for (const [id] of players.entries()) {
+            const isImposter = id === currentRound.imposterId;
+            const isFirst = id === currentRound.firstPlayerId;
+            io.to(id).emit('roundStarted', {
+              word: isImposter ? currentRound.similarWord : currentRound.word,
+              isImposter,
+              isFirst,
+            });
+          }
+
+          console.log(`Reassigned roles after ${player.name} left`);
+        }
+      }
+    }
+
     if (wasLeader && players.size > 0) {
       assignNewLeader();
     }
