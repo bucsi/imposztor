@@ -1,0 +1,13 @@
+{
+  "name": "imposztor",
+  "version": "1.0.0",
+  "description": "Multiplayer imposztor word game with Hungarian words",
+  "main": "server.js",
+  "scripts": {
+    "start": "bun server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2"
+  }
+}

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Imposztor</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Imposztor</h1>
+
+    <div id="joinScreen" class="screen">
+      <input type="text" id="nameInput" placeholder="Neved" maxlength="20" autocomplete="off">
+      <button id="joinBtn">Csatlakozás</button>
+    </div>
+
+    <div id="lobbyScreen" class="screen hidden">
+      <h2>Játékosok</h2>
+      <ul id="playerList"></ul>
+      <button id="startBtn" class="hidden">Új kör</button>
+      <p id="waitingText">Várakozás a vezetőre...</p>
+    </div>
+
+    <div id="gameScreen" class="screen hidden">
+      <div id="wordDisplay"></div>
+      <div id="firstPlayerBadge" class="hidden">Te kezdesz!</div>
+      <button id="nextRoundBtn" class="hidden">Új kör</button>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
