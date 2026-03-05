@@ -1,4 +1,9 @@
-const socket = io();
+const socket = io({
+  reconnection: true,
+  reconnectionDelay: 1000,
+  reconnectionDelayMax: 5000,
+  reconnectionAttempts: Infinity,
+});
 
 const joinScreen = document.getElementById('joinScreen');
 const lobbyScreen = document.getElementById('lobbyScreen');
@@ -12,16 +17,21 @@ const waitingText = document.getElementById('waitingText');
 const wordDisplay = document.getElementById('wordDisplay');
 const firstPlayerBadge = document.getElementById('firstPlayerBadge');
 const nextRoundBtn = document.getElementById('nextRoundBtn');
+const connectionStatus = document.getElementById('connectionStatus');
+const statusText = connectionStatus.querySelector('.status-text');
 
 console.log('gamePlayerList element:', gamePlayerList);
 
 let isLeader = false;
+let playerName = '';
+let currentScreen = joinScreen;
 
 const showScreen = (screen) => {
   joinScreen.classList.add('hidden');
   lobbyScreen.classList.add('hidden');
   gameScreen.classList.add('hidden');
   screen.classList.remove('hidden');
+  currentScreen = screen;
 };
 
 const updatePlayerList = (players, listElement) => {
@@ -60,6 +70,7 @@ const updateLeaderUI = () => {
 joinBtn.addEventListener('click', () => {
   const name = nameInput.value.trim();
   if (name) {
+    playerName = name;
     socket.emit('join', name);
   }
 });
@@ -122,4 +133,42 @@ socket.on('roundStarted', (data) => {
 
 socket.on('error', (message) => {
   alert(message);
+});
+
+// Connection status handlers
+socket.on('connect', () => {
+  console.log('Connected to server');
+  connectionStatus.classList.add('hidden');
+
+  // Auto-rejoin if we were previously in the game
+  if (playerName && currentScreen !== joinScreen) {
+    console.log('Reconnecting as:', playerName);
+    socket.emit('join', playerName);
+  }
+});
+
+socket.on('disconnect', () => {
+  console.log('Disconnected from server');
+  statusText.textContent = 'Kapcsolat megszakadt - Újracsatlakozás...';
+  connectionStatus.classList.remove('hidden');
+});
+
+socket.on('connect_error', () => {
+  console.log('Connection error');
+  statusText.textContent = 'Kapcsolódás...';
+  connectionStatus.classList.remove('hidden');
+});
+
+socket.on('reconnect', (attemptNumber) => {
+  console.log('Reconnected after', attemptNumber, 'attempts');
+  statusText.textContent = 'Újracsatlakozva!';
+  setTimeout(() => {
+    connectionStatus.classList.add('hidden');
+  }, 2000);
+});
+
+socket.on('reconnecting', (attemptNumber) => {
+  console.log('Reconnecting attempt', attemptNumber);
+  statusText.textContent = `Újracsatlakozás... (${attemptNumber})`;
+  connectionStatus.classList.remove('hidden');
 });
