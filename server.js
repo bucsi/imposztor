@@ -26,6 +26,7 @@ const getPlayerList = () =>
     id,
     name: player.name,
     isLeader: player.isLeader,
+    isFirst: currentRound?.firstPlayerId === id,
   }));
 
 const assignNewLeader = () => {

@@ -120,6 +120,12 @@ button:hover {
   font-size: 1.3rem;
 }
 
+#playerList li.first::after {
+  content: "💩";
+  font-size: 1.1rem;
+  margin-left: 5px;
+}
+
 #waitingText {
   color: #666;
   font-style: italic;
@@ -231,4 +237,10 @@ button:hover {
 #gamePlayerList li.leader::before {
   content: "👑";
   font-size: 0.9rem;
+}
+
+#gamePlayerList li.first::after {
+  content: "💩";
+  font-size: 0.8rem;
+  margin-left: 2px;
 }

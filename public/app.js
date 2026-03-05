@@ -37,6 +37,9 @@ const updatePlayerList = (players, listElement) => {
     if (player.isLeader) {
       li.classList.add('leader');
     }
+    if (player.isFirst) {
+      li.classList.add('first');
+    }
     listElement.appendChild(li);
   });
   console.log('Player list updated, children:', listElement.children.length);
