@@ -31,12 +31,20 @@ const getPlayerList = () =>
 const assignNewLeader = () => {
   if (players.size === 0) return;
 
+  // Clear all existing leader flags
+  for (const player of players.values()) {
+    player.isLeader = false;
+  }
+
+  // Assign first player as leader
   const firstPlayer = players.entries().next().value;
   if (!firstPlayer) return;
 
   const [id, player] = firstPlayer;
   player.isLeader = true;
+
   io.emit('leaderChanged', id);
+  io.emit('playerList', getPlayerList());
 };
 
 const hasLeader = () => Array.from(players.values()).some((p) => p.isLeader);
