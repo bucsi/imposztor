@@ -194,22 +194,17 @@ button:hover {
   bottom: 20px;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(255, 255, 255, 0.95);
-  border-radius: 15px;
-  padding: 15px 20px;
-  color: #1a1a2e;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
   max-width: 350px;
   width: calc(100% - 40px);
 }
 
-.player-card h3 {
-  font-size: 0.9rem;
-  margin-bottom: 10px;
-  color: #0f3460;
+.player-card-header {
+  font-size: 0.7rem;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.5);
   text-transform: uppercase;
   letter-spacing: 1px;
-  text-align: center;
+  margin-bottom: 8px;
 }
 
 #gamePlayerList {
@@ -222,16 +217,18 @@ button:hover {
 }
 
 #gamePlayerList li {
-  padding: 8px 12px;
-  background: #f0f0f0;
-  border-radius: 8px;
-  font-size: 0.9rem;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 20px;
+  font-size: 0.8rem;
   display: flex;
   align-items: center;
   gap: 5px;
+  color: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(10px);
 }
 
 #gamePlayerList li.leader::before {
   content: "👑";
-  font-size: 1rem;
+  font-size: 0.9rem;
 }
