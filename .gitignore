@@ -1,1 +1,11 @@
 node_modules
+*.beam
+*.ez
+build/
+erl_crash.dump
+.env
+*.swp
+*.swo
+*~
+.DS_Store
+.gleam
