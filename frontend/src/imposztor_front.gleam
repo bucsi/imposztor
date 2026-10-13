@@ -1,7 +1,9 @@
+import gleam/dynamic/decode
 import gleam/int
 import gleam/json
 import gleam/list
 import gleam/option
+import gleam/result
 import imposztor_common/player
 import imposztor_common/ws_api
 import imposztor_front/model.{
@@ -20,6 +22,9 @@ import lustre/event.{on_click, on_input}
 import lustre_websocket
 import plinth/browser/location
 import plinth/browser/window
+import varasto
+
+const token_key = "net.bucsi.imposztor.token"
 
 pub fn main() {
   let app = lustre.application(init, update, view)
@@ -28,12 +33,38 @@ pub fn main() {
 }
 
 fn init(_flags) -> #(Model, Effect(Msg)) {
-  let model = model.init()
+  let model = model.Model(..model.init(), player_token: load_token())
 
   let ws_url = get_ws_url()
   let ws_effect = lustre_websocket.init(ws_url, handle_ws_event)
 
   #(model, ws_effect)
+}
+
+fn token_storage() -> Result(varasto.TypedStorage(String), Nil) {
+  use raw <- result.map(varasto.local())
+  varasto.new(raw, decode.string, json.string)
+}
+
+fn load_token() -> option.Option(String) {
+  case token_storage() {
+    Ok(storage) ->
+      case varasto.get(storage, token_key) {
+        Ok(token) -> option.Some(token)
+        Error(_) -> option.None
+      }
+    Error(_) -> option.None
+  }
+}
+
+fn save_token(token: String) -> Nil {
+  case token_storage() {
+    Ok(storage) -> {
+      let _ = varasto.set(storage, token_key, token)
+      Nil
+    }
+    Error(_) -> Nil
+  }
 }
 
 fn get_ws_url() -> String {
@@ -69,7 +100,10 @@ fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     )
 
     msg.JoinClicked ->
-      send_when_connected(model, ws_api.Join(name: model.player_name))
+      send_when_connected(
+        model,
+        ws_api.Join(name: model.player_name, token: model.player_token),
+      )
 
     msg.StartRoundClicked -> send_when_connected(model, ws_api.StartRound)
 
@@ -91,10 +125,18 @@ fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       effect.none(),
     )
 
-    msg.WsMessage(ws_api.Joined(is_leader:)) -> #(
-      model.Model(..model, current_screen: LobbyScreen, is_leader: is_leader),
-      effect.none(),
-    )
+    msg.WsMessage(ws_api.Joined(token:, is_leader:)) -> {
+      save_token(token)
+      #(
+        model.Model(
+          ..model,
+          current_screen: LobbyScreen,
+          is_leader:,
+          player_token: option.Some(token),
+        ),
+        effect.none(),
+      )
+    }
 
     msg.WsMessage(ws_api.PlayerList(players:)) -> #(
       model.Model(..model, players: players),

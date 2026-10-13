@@ -39,7 +39,7 @@ pub fn on_init(
   // Generate unique player ID
   let player_id = string.inspect(process.self())
   let player =
-    Player(id: player_id, name: "", is_leader: False, is_first: False)
+    Player(id: player_id, name: "", is_leader: False, is_first: False, connected: True)
 
   let state =
     State(self:, user: InLobby(player:), game_room_subject:, selector:)
@@ -76,7 +76,7 @@ fn handle_client_message(
   msg: String,
 ) {
   case json.parse(msg, ws_api.client_decoder()) {
-    Ok(ws_api.Join(name:)) -> handle_join(conn, state, name)
+    Ok(ws_api.Join(name:, token:)) -> handle_join(conn, state, name, token)
     Ok(ws_api.StartRound) -> handle_start_round(state)
     Error(_) -> mist.continue(state)
   }
@@ -99,15 +99,20 @@ fn leave_room(user: UserState) -> Nil {
   }
 }
 
-fn handle_join(conn: mist.WebsocketConnection, state: State, name: String) {
+fn handle_join(
+  conn: mist.WebsocketConnection,
+  state: State,
+  name: String,
+  token: option.Option(String),
+) {
   let name = string.slice(name, 0, 20)
 
   let player = case state.user {
-    InLobby(player:) | InRoom(player:, ..) -> Player(..player, name: name)
+    InLobby(player:) | InRoom(player:, ..) -> Player(..player, name:)
   }
 
   case state.user {
-    InLobby(..) -> join_room(conn, state, player)
+    InLobby(..) -> join_room(conn, state, player, token)
     InRoom(room_subject:, reply_subject:, ..) -> {
       let user_state = InRoom(player:, room_subject:, reply_subject:)
       mist.continue(State(..state, user: user_state))
@@ -115,17 +120,22 @@ fn handle_join(conn: mist.WebsocketConnection, state: State, name: String) {
   }
 }
 
-fn join_room(conn: mist.WebsocketConnection, state: State, player: Player) {
+fn join_room(
+  conn: mist.WebsocketConnection,
+  state: State,
+  player: Player,
+  token: option.Option(String),
+) {
   let reply_subject = process.new_subject()
-  let _initial_msg =
-    game_room.subscribe(state.game_room_subject, player, reply_subject)
+  let game_room.JoinResult(token:, is_leader:) =
+    game_room.subscribe(state.game_room_subject, player, token, reply_subject)
 
   let new_selector =
     process.select_map(state.selector, reply_subject, RoomMessage)
 
-  let is_leader = False
-  let assert Ok(_) = send_msg(conn, ws_api.Joined(is_leader:))
+  let assert Ok(_) = send_msg(conn, ws_api.Joined(token:, is_leader:))
 
+  let player = Player(..player, id: token, is_leader:)
   let user_state =
     InRoom(player:, room_subject: state.game_room_subject, reply_subject:)
 

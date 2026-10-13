@@ -6,6 +6,7 @@ import gleam/otp/actor
 import gleam/result
 import imposztor_common/player.{type Player, type PlayerId, Player}
 import imposztor_common/words
+import lanyard
 
 pub type GameRoomId =
   String
@@ -15,6 +16,7 @@ pub type PlayerConnection {
     subject: Subject(PublishMessage),
     player: Player,
     monitor: process.Monitor,
+    pid: process.Pid,
   )
 }
 
@@ -31,7 +33,7 @@ pub type State {
   State(
     self_subject: Subject(Message),
     id: GameRoomId,
-    connections: Dict(process.Pid, PlayerConnection),
+    connections: Dict(PlayerId, PlayerConnection),
     current_round: Option(RoundState),
   )
 }
@@ -42,10 +44,15 @@ pub type PublishMessage {
   RoundStartedMsg(word: String, is_imposter: Bool, is_first: Bool)
 }
 
+pub type JoinResult {
+  JoinResult(token: PlayerId, is_leader: Bool)
+}
+
 pub type Message {
   Subscribe(
     player: Player,
-    reply_to: Subject(PublishMessage),
+    token: Option(PlayerId),
+    reply_to: Subject(JoinResult),
     subject: Subject(PublishMessage),
   )
   Unsubscribe(subject: Subject(PublishMessage))
@@ -87,8 +94,8 @@ pub fn start(
 
 pub fn handle_message(state: State, message: Message) -> actor.Next(State, a) {
   case message {
-    Subscribe(player:, reply_to:, subject:) ->
-      handle_subscribe(state, subject, player, reply_to)
+    Subscribe(player:, token:, reply_to:, subject:) ->
+      handle_subscribe(state, subject, token, player, reply_to)
     Unsubscribe(subject:) -> handle_unsubscribe(state, subject)
     StartRound(subject:) -> handle_start_round(state, subject)
     PlayerProcessDown(pid:) -> handle_player_down(state, pid)
@@ -99,42 +106,83 @@ pub fn handle_message(state: State, message: Message) -> actor.Next(State, a) {
 fn handle_subscribe(
   state: State,
   subject: Subject(PublishMessage),
+  token: Option(PlayerId),
   player: Player,
-  reply_to: Subject(PublishMessage),
+  reply_to: Subject(JoinResult),
 ) -> actor.Next(State, a) {
-  let pid = process.subject_owner(subject)
-
-  case pid {
+  case process.subject_owner(subject) {
     Error(_) -> actor.continue(state)
     Ok(pid) ->
-      case dict.get(state.connections, pid) {
-        Ok(_) -> actor.continue(state)
-        Error(_) -> new_player(pid, state, subject, player, reply_to)
+      case known_connection(state.connections, token) {
+        Some(existing) -> reclaim(pid, state, subject, existing, reply_to)
+        None -> mint_player(pid, state, subject, player, reply_to)
       }
   }
 }
 
-fn new_player(
+fn known_connection(
+  connections: Dict(PlayerId, PlayerConnection),
+  token: Option(PlayerId),
+) -> Option(PlayerConnection) {
+  use t <- option.then(token)
+  option.from_result(dict.get(connections, t))
+}
+
+fn mint_player(
   pid: process.Pid,
   state: State,
-  subject: process.Subject(PublishMessage),
+  subject: Subject(PublishMessage),
   player: Player,
-  reply_to: Subject(PublishMessage),
+  reply_to: Subject(JoinResult),
 ) -> actor.Next(State, a) {
+  let lanyard.NanoID(token) = lanyard.custom_length(8)
+  let player = Player(..player, id: token, is_leader: False)
   let monitor = process.monitor(pid)
   let connections =
     dict.insert(
       state.connections,
-      pid,
-      PlayerConnection(subject:, player:, monitor:),
+      token,
+      PlayerConnection(subject:, player:, monitor:, pid:),
     )
 
-  let players = get_player_list(connections, state.current_round)
-  publish(connections, PlayerListUpdated(players:))
-  process.send(reply_to, PlayerListUpdated(players:))
-  send_round_in_progress(reply_to, player, state.current_round)
+  process.send(reply_to, JoinResult(token:, is_leader: False))
+  announce(connections, state.current_round, subject, player)
 
   actor.continue(State(..state, connections:))
+}
+
+fn reclaim(
+  pid: process.Pid,
+  state: State,
+  subject: Subject(PublishMessage),
+  existing: PlayerConnection,
+  reply_to: Subject(JoinResult),
+) -> actor.Next(State, a) {
+  process.demonitor_process(existing.monitor)
+  let monitor = process.monitor(pid)
+  let player = Player(..existing.player, connected: True)
+  let connections =
+    dict.insert(
+      state.connections,
+      player.id,
+      PlayerConnection(subject:, player:, monitor:, pid:),
+    )
+
+  process.send(reply_to, JoinResult(token: player.id, is_leader: player.is_leader))
+  announce(connections, state.current_round, subject, player)
+
+  actor.continue(State(..state, connections:))
+}
+
+fn announce(
+  connections: Dict(PlayerId, PlayerConnection),
+  current_round: Option(RoundState),
+  subject: Subject(PublishMessage),
+  player: Player,
+) -> Nil {
+  let players = get_player_list(connections, current_round)
+  publish(connections, PlayerListUpdated(players:))
+  send_round_in_progress(subject, player, current_round)
 }
 
 fn send_round_in_progress(
@@ -170,7 +218,7 @@ fn handle_unsubscribe(
   subject: Subject(PublishMessage),
 ) -> actor.Next(State, a) {
   case process.subject_owner(subject) {
-    Ok(pid) -> remove_player(state, pid)
+    Ok(pid) -> mark_disconnected(state, pid)
     Error(_) -> actor.continue(state)
   }
 }
@@ -179,11 +227,16 @@ fn handle_start_round(
   state: State,
   subject: Subject(PublishMessage),
 ) -> actor.Next(State, a) {
-  let enough_players = dict.size(state.connections) >= 2
+  let enough_players = connected_count(state.connections) >= 2
   case requesting_leader(state, subject), enough_players {
     Ok(_leader), True -> start_round(state)
     _, _ -> actor.continue(state)
   }
+}
+
+fn connected_count(connections: Dict(PlayerId, PlayerConnection)) -> Int {
+  dict.values(connections)
+  |> list.count(fn(c) { c.player.connected })
 }
 
 fn requesting_leader(
@@ -191,24 +244,34 @@ fn requesting_leader(
   subject: Subject(PublishMessage),
 ) -> Result(PlayerConnection, Nil) {
   use pid <- result.try(process.subject_owner(subject))
-  use conn <- result.try(dict.get(state.connections, pid))
+  use #(_token, conn) <- result.try(find_by_pid(state.connections, pid))
   case conn.player.is_leader {
     True -> Ok(conn)
     False -> Error(Nil)
   }
 }
 
-fn start_round(state: State) -> actor.Next(State, a) {
-  let round = build_round(state.connections)
-
-  let players = get_player_list(state.connections, Some(round))
-  publish(state.connections, PlayerListUpdated(players:))
-  broadcast_round(state.connections, round)
-
-  actor.continue(State(..state, current_round: Some(round)))
+fn find_by_pid(
+  connections: Dict(PlayerId, PlayerConnection),
+  pid: process.Pid,
+) -> Result(#(PlayerId, PlayerConnection), Nil) {
+  dict.to_list(connections)
+  |> list.find(fn(pair) { { pair.1 }.pid == pid })
 }
 
-fn build_round(connections: Dict(process.Pid, PlayerConnection)) -> RoundState {
+fn start_round(state: State) -> actor.Next(State, a) {
+  let connections =
+    dict.filter(state.connections, fn(_, c) { c.player.connected })
+  let round = build_round(connections)
+
+  let players = get_player_list(connections, Some(round))
+  publish(connections, PlayerListUpdated(players:))
+  broadcast_round(connections, round)
+
+  actor.continue(State(..state, connections:, current_round: Some(round)))
+}
+
+fn build_round(connections: Dict(PlayerId, PlayerConnection)) -> RoundState {
   let word_pair =
     pick_one(words.word_pairs, or: words.WordPair("default", "default"))
   let player_ids = player_ids(connections)
@@ -222,7 +285,7 @@ fn build_round(connections: Dict(process.Pid, PlayerConnection)) -> RoundState {
 }
 
 fn broadcast_round(
-  connections: Dict(process.Pid, PlayerConnection),
+  connections: Dict(PlayerId, PlayerConnection),
   round: RoundState,
 ) -> Nil {
   dict.each(connections, fn(_, conn) {
@@ -231,110 +294,74 @@ fn broadcast_round(
 }
 
 fn player_ids(
-  connections: Dict(process.Pid, PlayerConnection),
+  connections: Dict(PlayerId, PlayerConnection),
 ) -> List(PlayerId) {
   dict.values(connections)
   |> list.map(fn(c) { c.player.id })
 }
 
 fn handle_player_down(state: State, pid: process.Pid) -> actor.Next(State, a) {
-  remove_player(state, pid)
+  mark_disconnected(state, pid)
 }
 
-fn remove_player(state: State, pid: process.Pid) -> actor.Next(State, a) {
-  case dict.get(state.connections, pid) {
+fn mark_disconnected(state: State, pid: process.Pid) -> actor.Next(State, a) {
+  case find_by_pid(state.connections, pid) {
     Error(_) -> actor.continue(state)
-    Ok(PlayerConnection(monitor:, player:, ..)) -> {
-      process.demonitor_process(monitor)
-      let connections = dict.delete(state.connections, pid)
+    Ok(#(token, conn)) -> {
+      process.demonitor_process(conn.monitor)
+      let connections = disconnect_entry(state.connections, token, conn)
 
-      case dict.is_empty(connections) {
-        True -> actor.stop()
-        False -> handle_departure(state, connections, player)
+      case any_connected(connections) {
+        False -> actor.stop()
+        True -> handle_departure(state, connections, conn.player)
       }
     }
   }
 }
 
-fn handle_departure(
-  state: State,
-  connections: Dict(process.Pid, PlayerConnection),
-  leaver: Player,
-) -> actor.Next(State, a) {
-  let new_round = recompute_round(state.current_round, leaver.id, connections)
-  let connections = promote_leader_if_needed(connections, leaver)
-
-  let players = get_player_list(connections, new_round)
-  publish(connections, PlayerListUpdated(players:))
-  rebroadcast_if_roles_changed(connections, state.current_round, new_round)
-  announce_leader_if_changed(connections, leaver)
-
-  actor.continue(State(..state, connections:, current_round: new_round))
-}
-
-fn recompute_round(
-  current_round: Option(RoundState),
-  leaver_id: PlayerId,
-  connections: Dict(process.Pid, PlayerConnection),
-) -> Option(RoundState) {
-  use round <- option.then(current_round)
-  let candidates = player_ids(connections)
-  Some(
-    RoundState(
-      ..round,
-      imposter_id: replace_if_leaving(round.imposter_id, leaver_id, candidates),
-      first_player_id: replace_if_leaving(
-        round.first_player_id,
-        leaver_id,
-        candidates,
-      ),
-    ),
+fn disconnect_entry(
+  connections: Dict(PlayerId, PlayerConnection),
+  token: PlayerId,
+  conn: PlayerConnection,
+) -> Dict(PlayerId, PlayerConnection) {
+  dict.insert(
+    connections,
+    token,
+    PlayerConnection(..conn, player: Player(..conn.player, connected: False)),
   )
 }
 
-fn replace_if_leaving(
-  current_id: PlayerId,
-  leaver_id: PlayerId,
-  candidates: List(PlayerId),
-) -> PlayerId {
-  case current_id == leaver_id {
-    True -> pick_one(candidates, or: current_id)
-    False -> current_id
-  }
+fn any_connected(connections: Dict(PlayerId, PlayerConnection)) -> Bool {
+  dict.values(connections)
+  |> list.any(fn(c) { c.player.connected })
+}
+
+fn handle_departure(
+  state: State,
+  connections: Dict(PlayerId, PlayerConnection),
+  leaver: Player,
+) -> actor.Next(State, a) {
+  let connections = promote_leader_if_needed(connections, leaver)
+
+  let players = get_player_list(connections, state.current_round)
+  publish(connections, PlayerListUpdated(players:))
+  announce_leader_if_changed(connections, leaver)
+
+  actor.continue(State(..state, connections:))
 }
 
 fn promote_leader_if_needed(
-  connections: Dict(process.Pid, PlayerConnection),
+  connections: Dict(PlayerId, PlayerConnection),
   leaver: Player,
-) -> Dict(process.Pid, PlayerConnection) {
+) -> Dict(PlayerId, PlayerConnection) {
   case leaver.is_leader {
     True -> reassign_leader(connections)
     False -> connections
   }
 }
 
-fn rebroadcast_if_roles_changed(
-  connections: Dict(process.Pid, PlayerConnection),
-  old_round: Option(RoundState),
-  new_round: Option(RoundState),
-) -> Nil {
-  case new_round, old_round {
-    Some(new_r), Some(old_r) ->
-      case roles_changed(old_r, new_r) {
-        True -> broadcast_round(connections, new_r)
-        False -> Nil
-      }
-    _, _ -> Nil
-  }
-}
-
-fn roles_changed(old_round: RoundState, new_round: RoundState) -> Bool {
-  old_round.imposter_id != new_round.imposter_id
-  || old_round.first_player_id != new_round.first_player_id
-}
-
 fn announce_leader_if_changed(
-  connections: Dict(process.Pid, PlayerConnection),
+  connections: Dict(PlayerId, PlayerConnection),
   leaver: Player,
 ) -> Nil {
   case leaver.is_leader {
@@ -349,36 +376,33 @@ fn announce_leader_if_changed(
 }
 
 fn reassign_leader(
-  connections: Dict(process.Pid, PlayerConnection),
-) -> Dict(process.Pid, PlayerConnection) {
-  case dict.to_list(connections) {
-    [] -> connections
-    [#(pid, first_conn), ..rest] -> {
-      let updated_first =
-        PlayerConnection(
-          ..first_conn,
-          player: Player(..first_conn.player, is_leader: True),
-        )
+  connections: Dict(PlayerId, PlayerConnection),
+) -> Dict(PlayerId, PlayerConnection) {
+  let cleared =
+    dict.map_values(connections, fn(_, conn) {
+      PlayerConnection(..conn, player: Player(..conn.player, is_leader: False))
+    })
 
-      let updated_rest =
-        list.map(rest, fn(pair) {
-          let #(p, conn) = pair
-          #(
-            p,
-            PlayerConnection(
-              ..conn,
-              player: Player(..conn.player, is_leader: False),
-            ),
-          )
-        })
-
-      dict.from_list([#(pid, updated_first), ..updated_rest])
-    }
+  case first_connected_token(cleared) {
+    Error(_) -> cleared
+    Ok(token) ->
+      dict.upsert(cleared, token, fn(entry) {
+        let assert Some(conn) = entry
+        PlayerConnection(..conn, player: Player(..conn.player, is_leader: True))
+      })
   }
 }
 
+fn first_connected_token(
+  connections: Dict(PlayerId, PlayerConnection),
+) -> Result(PlayerId, Nil) {
+  dict.to_list(connections)
+  |> list.find(fn(pair) { { pair.1 }.player.connected })
+  |> result.map(fn(pair) { pair.0 })
+}
+
 fn get_player_list(
-  connections: Dict(process.Pid, PlayerConnection),
+  connections: Dict(PlayerId, PlayerConnection),
   current_round: Option(RoundState),
 ) -> List(Player) {
   dict.values(connections)
@@ -392,7 +416,7 @@ fn get_player_list(
 }
 
 fn publish(
-  connections: Dict(process.Pid, PlayerConnection),
+  connections: Dict(PlayerId, PlayerConnection),
   message: PublishMessage,
 ) -> Nil {
   connections |> dict.each(fn(_, conn) { process.send(conn.subject, message) })
@@ -401,10 +425,11 @@ fn publish(
 pub fn subscribe(
   actor: Subject(Message),
   player: Player,
+  token: Option(PlayerId),
   subject: Subject(PublishMessage),
-) -> PublishMessage {
+) -> JoinResult {
   process.call(actor, 5000, fn(self) {
-    Subscribe(player:, reply_to: self, subject:)
+    Subscribe(player:, token:, reply_to: self, subject:)
   })
 }
 
