@@ -22,12 +22,18 @@ import lustre/event.{on_click, on_input}
 import lustre_websocket
 import plinth/browser/location
 import plinth/browser/window
+import plinth/javascript/console
 import plinth/javascript/global
+import plinth/javascript/storage
 import varasto
 
-const token_key = "net.bucsi.imposztor.token"
+const localstorage_key_prefix = "net.bucsi.imposztor."
 
-const name_key = "net.bucsi.imposztor.name"
+const token_key = localstorage_key_prefix <> "token"
+
+const name_key = localstorage_key_prefix <> "name"
+
+const debug_key = localstorage_key_prefix <> "debug"
 
 const max_reconnect_attempts = 10
 
@@ -45,6 +51,7 @@ fn init(_flags) -> #(Model, Effect(Msg)) {
       ..model.init(),
       player_token: load_string(token_key),
       player_name: option.unwrap(load_string(name_key), ""),
+      debug: load_raw(debug_key),
     )
 
   let ws_url = get_ws_url()
@@ -60,10 +67,20 @@ fn token_storage() -> Result(varasto.TypedStorage(String), Nil) {
 
 fn load_string(key: String) -> option.Option(String) {
   case token_storage() {
-    Ok(storage) ->
-      case varasto.get(storage, key) {
+    Ok(typed) ->
+      varasto.get(typed, key)
+      |> result.map(option.Some)
+      |> result.unwrap(option.None)
+    Error(_) -> option.None
+  }
+}
+
+fn load_raw(key: String) -> option.Option(String) {
+  case storage.local() {
+    Ok(raw) ->
+      case storage.get_item(raw, key) {
+        Ok("") | Error(_) -> option.None
         Ok(value) -> option.Some(value)
-        Error(_) -> option.None
       }
     Error(_) -> option.None
   }
@@ -71,8 +88,8 @@ fn load_string(key: String) -> option.Option(String) {
 
 fn save_string(key: String, value: String) -> Nil {
   case token_storage() {
-    Ok(storage) -> {
-      let _ = varasto.set(storage, key, value)
+    Ok(typed) -> {
+      let _ = varasto.set(typed, key, value)
       Nil
     }
     Error(_) -> Nil
@@ -105,6 +122,8 @@ fn handle_ws_event(event: lustre_websocket.WebSocketEvent) -> Msg {
 }
 
 fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
+  log_debug(model, msg)
+
   case msg {
     msg.UpdateName(name) -> {
       save_string(name_key, name)
@@ -177,6 +196,21 @@ fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     )
 
     msg.NoOp -> #(model, effect.none())
+  }
+}
+
+fn log_debug(model: Model, msg: Msg) -> Nil {
+  case model.debug {
+    option.Some(_) -> {
+      console.group("debug")
+      {
+        console.log(model)
+        console.log(msg)
+      }
+      console.group_end()
+      Nil
+    }
+    option.None -> Nil
   }
 }
 
