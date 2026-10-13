@@ -27,6 +27,7 @@ pub type Model {
     is_first_player: Bool,
     connection_status: ConnectionStatus,
     socket: Option(lustre_websocket.WebSocket),
+    debug: Option(String),
   )
 }
 
@@ -42,5 +43,6 @@ pub fn init() -> Model {
     is_first_player: False,
     connection_status: StatusDisconnected,
     socket: None,
+    debug: None,
   )
 }
