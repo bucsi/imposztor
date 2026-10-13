@@ -1,12 +1,13 @@
 import gleam/dynamic/decode
 import gleam/json.{type Json}
+import gleam/option.{type Option, None}
 import imposztor_common/player.{type Player}
 
 const type_key = "type"
 
 // Client -> Server messages
 pub type ClientMessage {
-  Join(name: String)
+  Join(name: String, token: Option(String))
   StartRound
 }
 
@@ -27,9 +28,14 @@ fn join_decoder() {
     "join",
     {
       use name <- decode.field("name", decode.string)
-      decode.success(Join(name:))
+      use token <- decode.optional_field(
+        "token",
+        None,
+        decode.optional(decode.string),
+      )
+      decode.success(Join(name:, token:))
     },
-    Join(name: ""),
+    Join(name: "", token: None),
   )
 }
 
@@ -43,10 +49,11 @@ pub fn client_decoder() {
 
 pub fn client_encoder(msg: ClientMessage) -> Json {
   case msg {
-    Join(name:) ->
+    Join(name:, token:) ->
       json.object([
         #(type_key, json.string("join")),
         #("name", json.string(name)),
+        #("token", json.nullable(token, json.string)),
       ])
     StartRound -> json.object([#(type_key, json.string("startRound"))])
   }
@@ -54,7 +61,7 @@ pub fn client_encoder(msg: ClientMessage) -> Json {
 
 // Server -> Client messages
 pub type ServerMessage {
-  Joined(is_leader: Bool)
+  Joined(token: String, is_leader: Bool)
   PlayerList(players: List(Player))
   LeaderChanged(leader_id: String)
   RoundStarted(word: String, is_imposter: Bool, is_first: Bool)
@@ -63,9 +70,10 @@ pub type ServerMessage {
 
 pub fn server_encoder(msg: ServerMessage) -> Json {
   case msg {
-    Joined(is_leader:) ->
+    Joined(token:, is_leader:) ->
       json.object([
         #(type_key, json.string("joined")),
+        #("token", json.string(token)),
         #("isLeader", json.bool(is_leader)),
       ])
     PlayerList(players:) ->
@@ -97,10 +105,11 @@ fn joined_decoder() {
   typed_object_decoder(
     "joined",
     {
+      use token <- decode.field("token", decode.string)
       use is_leader <- decode.field("isLeader", decode.bool)
-      decode.success(Joined(is_leader:))
+      decode.success(Joined(token:, is_leader:))
     },
-    Joined(is_leader: False),
+    Joined(token: "", is_leader: False),
   )
 }
 

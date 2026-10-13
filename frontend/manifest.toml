@@ -44,6 +44,7 @@ packages = [
   { name = "snag", version = "1.2.0", build_tools = ["gleam"], requirements = ["gleam_stdlib"], otp_app = "snag", source = "hex", outer_checksum = "274F41D6C3ECF99F7686FDCE54183333E41D2C1CA5A3A673F9A8B2C7A4401077" },
   { name = "telemetry", version = "1.4.1", build_tools = ["rebar3"], requirements = [], otp_app = "telemetry", source = "hex", outer_checksum = "2172E05A27531D3D31DD9782841065C50DD5C3C7699D95266B2EDD54C2DAFA1C" },
   { name = "tom", version = "2.0.1", build_tools = ["gleam"], requirements = ["gleam_stdlib", "gleam_time"], otp_app = "tom", source = "hex", outer_checksum = "90791DA4AACE637E30081FE77049B8DB850FBC8CACC31515376BCC4E59BE1DD2" },
+  { name = "varasto", version = "4.0.0", build_tools = ["gleam"], requirements = ["gleam_json", "gleam_stdlib"], otp_app = "varasto", source = "hex", outer_checksum = "D513EDAD243F41328A31B3D41E0D96C4765A2157D0F0FD98688EC9CB2144B66D" },
   { name = "wisp", version = "2.2.1", build_tools = ["gleam"], requirements = ["directories", "exception", "filepath", "gleam_crypto", "gleam_erlang", "gleam_http", "gleam_json", "gleam_stdlib", "houdini", "logging", "marceau", "mist", "simplifile"], otp_app = "wisp", source = "hex", outer_checksum = "6E37308F4F8C45B5D3F2A2DC71BDE4DA6AD2F7978D26A7C8D6790CE275C8614E" },
 ]
 
@@ -57,3 +58,4 @@ lustre_dev_tools = { version = ">= 2.0.0 and < 3.0.0" }
 lustre_websocket = { version = ">= 0.9.0 and < 1.0.0" }
 modem = { version = ">= 2.0.1 and < 3.0.0" }
 plinth = { version = ">= 0.5.6 and < 1.0.0" }
+varasto = { version = ">= 4.0.0 and < 5.0.0" }

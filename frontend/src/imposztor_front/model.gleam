@@ -18,6 +18,7 @@ pub type Model {
   Model(
     current_screen: Screen,
     player_name: String,
+    player_token: Option(String),
     is_leader: Bool,
     players: List(Player),
     current_word: Option(String),
@@ -32,6 +33,7 @@ pub fn init() -> Model {
   Model(
     current_screen: JoinScreen,
     player_name: "",
+    player_token: None,
     is_leader: False,
     players: [],
     current_word: None,
