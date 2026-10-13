@@ -1,2 +1,105 @@
 [tools]
 bun = "latest"
+erlang = "latest"
+gleam = "latest"
+rebar = "latest"
+
+[tasks.build]
+description = "Build all packages (common, backend, frontend)"
+run = """
+#!/usr/bin/env bash
+set -e
+
+echo "Building Imposztor..."
+
+# Build common
+echo "Building common..."
+cd common
+gleam build
+cd ..
+
+# Build backend
+echo "Building backend..."
+cd backend
+gleam build
+cd ..
+
+# Build frontend
+echo "Building frontend..."
+cd frontend
+gleam build --target javascript
+# Copy the built JS to backend static
+cp build/dev/javascript/imposztor_front/imposztor_front.mjs ../backend/priv/static/
+cd ..
+
+echo "Build complete!"
+echo "To run the server: mise run dev"
+"""
+
+[tasks.dev]
+description = "Run the development server"
+depends = ["build"]
+run = """
+cd backend && gleam run
+"""
+
+[tasks.clean]
+description = "Clean all build artifacts"
+run = """
+rm -rf common/build backend/build frontend/build
+rm -rf backend/priv/static/imposztor_front.mjs
+echo "Clean complete!"
+"""
+
+[tasks.frontend]
+description = "Build frontend only"
+run = """
+cd frontend
+gleam build --target javascript
+cp build/dev/javascript/imposztor_front/imposztor_front.mjs ../backend/priv/static/
+echo "Frontend build complete!"
+"""
+
+[tasks.backend]
+description = "Build backend only"
+depends = ["build-common"]
+run = """
+cd backend
+gleam build
+echo "Backend build complete!"
+"""
+
+[tasks.build-common]
+description = "Build common package only"
+run = """
+cd common
+gleam build
+echo "Common build complete!"
+"""
+
+[tasks.format]
+description = "Format all Gleam code"
+run = """
+cd common && gleam format
+cd ../backend && gleam format
+cd ../frontend && gleam format
+echo "Format complete!"
+"""
+
+[tasks.check]
+description = "Check all packages without building"
+run = """
+echo "Checking common..."
+cd common && gleam check
+cd ..
+
+echo "Checking backend..."
+cd backend && gleam check
+cd ..
+
+echo "Checking frontend..."
+cd frontend && gleam check
+cd ..
+
+echo "All checks passed!"
+"""
