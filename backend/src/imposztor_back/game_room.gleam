@@ -313,7 +313,7 @@ fn mark_disconnected(state: State, pid: process.Pid) -> actor.Next(State, a) {
       let connections = disconnect_entry(state.connections, token, conn)
 
       case any_connected(connections) {
-        False -> actor.stop()
+        False -> reset_empty_room(state)
         True -> handle_departure(state, connections, conn.player)
       }
     }
@@ -335,6 +335,10 @@ fn disconnect_entry(
 fn any_connected(connections: Dict(PlayerId, PlayerConnection)) -> Bool {
   dict.values(connections)
   |> list.any(fn(c) { c.player.connected })
+}
+
+fn reset_empty_room(state: State) -> actor.Next(State, a) {
+  actor.continue(State(..state, connections: dict.new(), current_round: None))
 }
 
 fn has_connected_leader(connections: Dict(PlayerId, PlayerConnection)) -> Bool {
