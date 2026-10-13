@@ -27,6 +27,8 @@ import varasto
 
 const token_key = "net.bucsi.imposztor.token"
 
+const name_key = "net.bucsi.imposztor.name"
+
 const max_reconnect_attempts = 10
 
 const reconnect_delay_ms = 2000
@@ -38,7 +40,12 @@ pub fn main() {
 }
 
 fn init(_flags) -> #(Model, Effect(Msg)) {
-  let model = model.Model(..model.init(), player_token: load_token())
+  let model =
+    model.Model(
+      ..model.init(),
+      player_token: load_string(token_key),
+      player_name: option.unwrap(load_string(name_key), ""),
+    )
 
   let ws_url = get_ws_url()
   let ws_effect = lustre_websocket.init(ws_url, handle_ws_event)
@@ -51,21 +58,21 @@ fn token_storage() -> Result(varasto.TypedStorage(String), Nil) {
   varasto.new(raw, decode.string, json.string)
 }
 
-fn load_token() -> option.Option(String) {
+fn load_string(key: String) -> option.Option(String) {
   case token_storage() {
     Ok(storage) ->
-      case varasto.get(storage, token_key) {
-        Ok(token) -> option.Some(token)
+      case varasto.get(storage, key) {
+        Ok(value) -> option.Some(value)
         Error(_) -> option.None
       }
     Error(_) -> option.None
   }
 }
 
-fn save_token(token: String) -> Nil {
+fn save_string(key: String, value: String) -> Nil {
   case token_storage() {
     Ok(storage) -> {
-      let _ = varasto.set(storage, token_key, token)
+      let _ = varasto.set(storage, key, value)
       Nil
     }
     Error(_) -> Nil
@@ -99,10 +106,10 @@ fn handle_ws_event(event: lustre_websocket.WebSocketEvent) -> Msg {
 
 fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
   case msg {
-    msg.UpdateName(name) -> #(
-      model.Model(..model, player_name: name),
-      effect.none(),
-    )
+    msg.UpdateName(name) -> {
+      save_string(name_key, name)
+      #(model.Model(..model, player_name: name), effect.none())
+    }
 
     msg.JoinClicked ->
       send_when_connected(
@@ -124,7 +131,7 @@ fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     msg.WsDisconnected -> handle_disconnect(model)
 
     msg.WsMessage(ws_api.Joined(token:, is_leader:)) -> {
-      save_token(token)
+      save_string(token_key, token)
       #(
         model.Model(
           ..model,
