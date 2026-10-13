@@ -136,7 +136,8 @@ fn mint_player(
   reply_to: Subject(JoinResult),
 ) -> actor.Next(State, a) {
   let lanyard.NanoID(token) = lanyard.custom_length(8)
-  let player = Player(..player, id: token, is_leader: False)
+  let is_leader = !has_connected_leader(state.connections)
+  let player = Player(..player, id: token, is_leader:)
   let monitor = process.monitor(pid)
   let connections =
     dict.insert(
@@ -145,7 +146,7 @@ fn mint_player(
       PlayerConnection(subject:, player:, monitor:, pid:),
     )
 
-  process.send(reply_to, JoinResult(token:, is_leader: False))
+  process.send(reply_to, JoinResult(token:, is_leader:))
   announce(connections, state.current_round, subject, player)
 
   actor.continue(State(..state, connections:))
@@ -334,6 +335,11 @@ fn disconnect_entry(
 fn any_connected(connections: Dict(PlayerId, PlayerConnection)) -> Bool {
   dict.values(connections)
   |> list.any(fn(c) { c.player.connected })
+}
+
+fn has_connected_leader(connections: Dict(PlayerId, PlayerConnection)) -> Bool {
+  dict.values(connections)
+  |> list.any(fn(c) { c.player.connected && c.player.is_leader })
 }
 
 fn handle_departure(
