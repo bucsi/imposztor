@@ -1,3 +1,6 @@
+[env]
+_.file = ".env"
+
 [tools]
 bun = "latest"
 erlang = "latest"
@@ -27,9 +30,11 @@ cd ..
 # Build frontend
 echo "Building frontend..."
 cd frontend
-gleam build --target javascript
-# Copy the built JS to backend static
-cp build/dev/javascript/imposztor_front/imposztor_front.mjs ../backend/priv/static/
+# Bundle all deps into a single self-contained module via lustre_dev_tools.
+# A plain `gleam build` emits a .mjs that imports sibling packages which are
+# not served from priv/static, so the browser fails to load it.
+gleam run -m lustre/dev build --outdir=dist
+cp dist/imposztor_front.js ../backend/priv/static/imposztor_front.mjs
 cd ..
 
 echo "Build complete!"
@@ -55,8 +60,8 @@ echo "Clean complete!"
 description = "Build frontend only"
 run = """
 cd frontend
-gleam build --target javascript
-cp build/dev/javascript/imposztor_front/imposztor_front.mjs ../backend/priv/static/
+gleam run -m lustre/dev build --outdir=dist
+cp dist/imposztor_front.js ../backend/priv/static/imposztor_front.mjs
 echo "Frontend build complete!"
 """
 

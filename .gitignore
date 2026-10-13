@@ -12,3 +12,7 @@ erl_crash.dump
 
 # Generated frontend bundle, built into backend static by `mise run build`
 backend/priv/static/imposztor_front.mjs
+
+# lustre_dev_tools bundle output
+frontend/dist/
+frontend/.lustre/
