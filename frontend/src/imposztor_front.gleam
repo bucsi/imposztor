@@ -228,7 +228,7 @@ fn view_connection_status(status: model.ConnectionStatus) -> Element(Msg) {
 }
 
 fn view_join_screen(model: Model) -> Element(Msg) {
-  div([class("screen")], [
+  div([class("screen join")], [
     input([
       type_("text"),
       id("nameInput"),
@@ -243,7 +243,7 @@ fn view_join_screen(model: Model) -> Element(Msg) {
 }
 
 fn view_lobby_screen(model: Model) -> Element(Msg) {
-  div([class("screen")], [
+  div([class("screen lobby")], [
     h2([], [text("Játékosok")]),
     view_player_list(model.players),
     case model.is_leader {
@@ -257,7 +257,7 @@ fn view_lobby_screen(model: Model) -> Element(Msg) {
 }
 
 fn view_game_screen(model: Model) -> Element(Msg) {
-  div([class("screen")], [
+  div([class("screen game")], [
     view_word_display(model),
     case model.is_first_player {
       True -> div([id("firstPlayerBadge")], [text("Te kezdesz!")])
@@ -272,7 +272,7 @@ fn view_game_screen(model: Model) -> Element(Msg) {
     },
     div([class("player-card")], [
       div([class("player-card-header")], [text("Játékosok")]),
-      view_player_list(model.players),
+      view_player_list_with_id("gamePlayerList", model.players),
     ]),
   ])
 }
@@ -291,7 +291,14 @@ fn view_word_display(model: Model) -> Element(Msg) {
 }
 
 fn view_player_list(players: List(player.Player)) -> Element(Msg) {
-  ul([id("playerList")], list.map(players, view_player_item))
+  view_player_list_with_id("playerList", players)
+}
+
+fn view_player_list_with_id(
+  list_id: String,
+  players: List(player.Player),
+) -> Element(Msg) {
+  ul([id(list_id)], list.map(players, view_player_item))
 }
 
 fn view_player_item(player: player.Player) -> Element(Msg) {
