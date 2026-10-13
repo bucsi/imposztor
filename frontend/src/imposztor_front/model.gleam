@@ -28,7 +28,6 @@ pub type Model {
   )
 }
 
-
 pub fn init() -> Model {
   Model(
     current_screen: JoinScreen,

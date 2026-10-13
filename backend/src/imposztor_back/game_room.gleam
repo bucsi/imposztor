@@ -3,6 +3,7 @@ import gleam/erlang/process.{type Subject}
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
+import gleam/result
 import imposztor_common/player.{type Player, type PlayerId, Player}
 import imposztor_common/words
 
@@ -102,44 +103,65 @@ fn handle_subscribe(
   reply_to: Subject(PublishMessage),
 ) -> actor.Next(State, a) {
   let pid = process.subject_owner(subject)
+
   case pid {
+    Error(_) -> actor.continue(state)
     Ok(pid) ->
       case dict.get(state.connections, pid) {
         Ok(_) -> actor.continue(state)
-        Error(_) -> {
-          let monitor = process.monitor(pid)
-          let connections =
-            dict.insert(
-              state.connections,
-              pid,
-              PlayerConnection(subject:, player:, monitor:),
-            )
-
-          let players = get_player_list(connections, state.current_round)
-          publish(connections, PlayerListUpdated(players:))
-          process.send(reply_to, PlayerListUpdated(players:))
-
-          // If there's a current round, send it to the new player
-          case state.current_round {
-            Some(round) -> {
-              let is_imposter = round.imposter_id == player.id
-              let is_first = round.first_player_id == player.id
-              let word = case is_imposter {
-                True -> round.similar_word
-                False -> round.word
-              }
-              process.send(
-                reply_to,
-                RoundStartedMsg(word:, is_imposter:, is_first:),
-              )
-            }
-            None -> Nil
-          }
-
-          actor.continue(State(..state, connections:))
-        }
+        Error(_) -> new_player(pid, state, subject, player, reply_to)
       }
-    Error(_) -> actor.continue(state)
+  }
+}
+
+fn new_player(
+  pid: process.Pid,
+  state: State,
+  subject: process.Subject(PublishMessage),
+  player: Player,
+  reply_to: Subject(PublishMessage),
+) -> actor.Next(State, a) {
+  let monitor = process.monitor(pid)
+  let connections =
+    dict.insert(
+      state.connections,
+      pid,
+      PlayerConnection(subject:, player:, monitor:),
+    )
+
+  let players = get_player_list(connections, state.current_round)
+  publish(connections, PlayerListUpdated(players:))
+  process.send(reply_to, PlayerListUpdated(players:))
+  send_round_in_progress(reply_to, player, state.current_round)
+
+  actor.continue(State(..state, connections:))
+}
+
+fn send_round_in_progress(
+  reply_to: Subject(PublishMessage),
+  player: Player,
+  current_round: Option(RoundState),
+) -> Nil {
+  case current_round {
+    None -> Nil
+    Some(round) -> process.send(reply_to, round_message_for(round, player.id))
+  }
+}
+
+fn round_message_for(round: RoundState, player_id: PlayerId) -> PublishMessage {
+  let is_imposter = round.imposter_id == player_id
+  let is_first = round.first_player_id == player_id
+  let word = case is_imposter {
+    True -> round.similar_word
+    False -> round.word
+  }
+  RoundStartedMsg(word:, is_imposter:, is_first:)
+}
+
+fn pick_one(from items: List(a), or default: a) -> a {
+  case list.sample(items, up_to: 1) {
+    [item] -> item
+    _ -> default
   }
 }
 
@@ -157,81 +179,62 @@ fn handle_start_round(
   state: State,
   subject: Subject(PublishMessage),
 ) -> actor.Next(State, a) {
-  case process.subject_owner(subject) {
-    Ok(pid) ->
-      case dict.get(state.connections, pid) {
-        Ok(conn) -> {
-          // Check if player is leader
-          let player_count = dict.size(state.connections)
-          case conn.player.is_leader, player_count >= 2 {
-            True, True -> {
-              // Pick random word pair
-              let word_pair_result = list.sample(words.word_pairs, up_to: 1)
-              let word_pair = case word_pair_result {
-                [wp] -> wp
-                _ -> words.WordPair("default", "default")
-              }
-
-              // Pick random imposter and first player
-              let player_ids =
-                dict.values(state.connections)
-                |> list.map(fn(c) { c.player.id })
-
-              let imposter_result = list.sample(player_ids, up_to: 1)
-              let imposter_id = case imposter_result {
-                [id] -> id
-                _ -> ""
-              }
-
-              let first_player_result = list.sample(player_ids, up_to: 1)
-              let first_player_id = case first_player_result {
-                [id] -> id
-                _ -> ""
-              }
-
-              let round =
-                RoundState(
-                  word: word_pair.word,
-                  similar_word: word_pair.similar,
-                  imposter_id:,
-                  first_player_id:,
-                )
-
-              // Update player list with first player indicator
-              let players = get_player_list(state.connections, Some(round))
-              publish(state.connections, PlayerListUpdated(players:))
-
-              // Send round started messages
-              let _ =
-                dict.each(state.connections, fn(_, conn) {
-                  let is_imposter = conn.player.id == imposter_id
-                  let is_first = conn.player.id == first_player_id
-                  let word = case is_imposter {
-                    True -> word_pair.similar
-                    False -> word_pair.word
-                  }
-                  process.send(
-                    conn.subject,
-                    RoundStartedMsg(word:, is_imposter:, is_first:),
-                  )
-                })
-
-              actor.continue(State(..state, current_round: Some(round)))
-            }
-            False, True -> {
-              // Player is not leader, ignore
-              actor.continue(state)
-            }
-            _, False -> {
-              // Not enough players
-              actor.continue(state)
-            }
-          }
-        }
-        Error(_) -> actor.continue(state)
-      }
-    Error(_) -> actor.continue(state)
+  let enough_players = dict.size(state.connections) >= 2
+  case requesting_leader(state, subject), enough_players {
+    Ok(_leader), True -> start_round(state)
+    _, _ -> actor.continue(state)
   }
+}
+
+fn requesting_leader(
+  state: State,
+  subject: Subject(PublishMessage),
+) -> Result(PlayerConnection, Nil) {
+  use pid <- result.try(process.subject_owner(subject))
+  use conn <- result.try(dict.get(state.connections, pid))
+  case conn.player.is_leader {
+    True -> Ok(conn)
+    False -> Error(Nil)
+  }
+}
+
+fn start_round(state: State) -> actor.Next(State, a) {
+  let round = build_round(state.connections)
+
+  let players = get_player_list(state.connections, Some(round))
+  publish(state.connections, PlayerListUpdated(players:))
+  broadcast_round(state.connections, round)
+
+  actor.continue(State(..state, current_round: Some(round)))
+}
+
+fn build_round(connections: Dict(process.Pid, PlayerConnection)) -> RoundState {
+  let word_pair =
+    pick_one(words.word_pairs, or: words.WordPair("default", "default"))
+  let player_ids = player_ids(connections)
+
+  RoundState(
+    word: word_pair.word,
+    similar_word: word_pair.similar,
+    imposter_id: pick_one(player_ids, or: ""),
+    first_player_id: pick_one(player_ids, or: ""),
+  )
+}
+
+fn broadcast_round(
+  connections: Dict(process.Pid, PlayerConnection),
+  round: RoundState,
+) -> Nil {
+  dict.each(connections, fn(_, conn) {
+    process.send(conn.subject, round_message_for(round, conn.player.id))
+  })
+}
+
+fn player_ids(
+  connections: Dict(process.Pid, PlayerConnection),
+) -> List(PlayerId) {
+  dict.values(connections)
+  |> list.map(fn(c) { c.player.id })
 }
 
 fn handle_player_down(state: State, pid: process.Pid) -> actor.Next(State, a) {
@@ -240,109 +243,108 @@ fn handle_player_down(state: State, pid: process.Pid) -> actor.Next(State, a) {
 
 fn remove_player(state: State, pid: process.Pid) -> actor.Next(State, a) {
   case dict.get(state.connections, pid) {
+    Error(_) -> actor.continue(state)
     Ok(PlayerConnection(monitor:, player:, ..)) -> {
-      let connections = dict.delete(state.connections, pid)
       process.demonitor_process(monitor)
+      let connections = dict.delete(state.connections, pid)
 
-      case dict.size(connections) {
-        0 -> actor.stop()
-        _ -> {
-          let was_leader = player.is_leader
-
-          // Update current round if needed
-          let new_round = case state.current_round {
-            Some(round) -> {
-              let player_ids =
-                dict.values(connections)
-                |> list.map(fn(c) { c.player.id })
-
-              let new_round_opt = case list.is_empty(player_ids) {
-                True -> None
-                False -> {
-                  let new_imposter = case round.imposter_id == player.id {
-                    True -> {
-                      let result = list.sample(player_ids, up_to: 1)
-                      case result {
-                        [new_id] -> new_id
-                        _ -> round.imposter_id
-                      }
-                    }
-                    False -> round.imposter_id
-                  }
-
-                  let new_first = case round.first_player_id == player.id {
-                    True -> {
-                      let result = list.sample(player_ids, up_to: 1)
-                      case result {
-                        [new_id] -> new_id
-                        _ -> round.first_player_id
-                      }
-                    }
-                    False -> round.first_player_id
-                  }
-
-                  Some(
-                    RoundState(
-                      ..round,
-                      imposter_id: new_imposter,
-                      first_player_id: new_first,
-                    ),
-                  )
-                }
-              }
-              new_round_opt
-            }
-            None -> None
-          }
-
-          // Reassign leader if needed
-          let connections = case was_leader {
-            True -> reassign_leader(connections)
-            False -> connections
-          }
-
-          // Notify all players
-          let players = get_player_list(connections, new_round)
-          publish(connections, PlayerListUpdated(players:))
-
-          // If round changed, notify players
-          let _ = case new_round, state.current_round {
-            Some(new_r), Some(old_r)
-              if new_r.imposter_id != old_r.imposter_id
-              || new_r.first_player_id != old_r.first_player_id
-            -> {
-              dict.each(connections, fn(_, conn) {
-                let is_imposter = conn.player.id == new_r.imposter_id
-                let is_first = conn.player.id == new_r.first_player_id
-                let word = case is_imposter {
-                  True -> new_r.similar_word
-                  False -> new_r.word
-                }
-                process.send(
-                  conn.subject,
-                  RoundStartedMsg(word:, is_imposter:, is_first:),
-                )
-              })
-            }
-            _, _ -> Nil
-          }
-
-          // Notify of leader change if needed
-          case was_leader {
-            True -> {
-              let assert Ok(new_leader) =
-                dict.values(connections)
-                |> list.find(fn(c) { c.player.is_leader })
-              publish(connections, LeaderChangedMsg(new_leader.player.id))
-            }
-            False -> Nil
-          }
-
-          actor.continue(State(..state, connections:, current_round: new_round))
-        }
+      case dict.is_empty(connections) {
+        True -> actor.stop()
+        False -> handle_departure(state, connections, player)
       }
     }
-    Error(_) -> actor.continue(state)
+  }
+}
+
+fn handle_departure(
+  state: State,
+  connections: Dict(process.Pid, PlayerConnection),
+  leaver: Player,
+) -> actor.Next(State, a) {
+  let new_round = recompute_round(state.current_round, leaver.id, connections)
+  let connections = promote_leader_if_needed(connections, leaver)
+
+  let players = get_player_list(connections, new_round)
+  publish(connections, PlayerListUpdated(players:))
+  rebroadcast_if_roles_changed(connections, state.current_round, new_round)
+  announce_leader_if_changed(connections, leaver)
+
+  actor.continue(State(..state, connections:, current_round: new_round))
+}
+
+fn recompute_round(
+  current_round: Option(RoundState),
+  leaver_id: PlayerId,
+  connections: Dict(process.Pid, PlayerConnection),
+) -> Option(RoundState) {
+  use round <- option.then(current_round)
+  let candidates = player_ids(connections)
+  Some(
+    RoundState(
+      ..round,
+      imposter_id: replace_if_leaving(round.imposter_id, leaver_id, candidates),
+      first_player_id: replace_if_leaving(
+        round.first_player_id,
+        leaver_id,
+        candidates,
+      ),
+    ),
+  )
+}
+
+fn replace_if_leaving(
+  current_id: PlayerId,
+  leaver_id: PlayerId,
+  candidates: List(PlayerId),
+) -> PlayerId {
+  case current_id == leaver_id {
+    True -> pick_one(candidates, or: current_id)
+    False -> current_id
+  }
+}
+
+fn promote_leader_if_needed(
+  connections: Dict(process.Pid, PlayerConnection),
+  leaver: Player,
+) -> Dict(process.Pid, PlayerConnection) {
+  case leaver.is_leader {
+    True -> reassign_leader(connections)
+    False -> connections
+  }
+}
+
+fn rebroadcast_if_roles_changed(
+  connections: Dict(process.Pid, PlayerConnection),
+  old_round: Option(RoundState),
+  new_round: Option(RoundState),
+) -> Nil {
+  case new_round, old_round {
+    Some(new_r), Some(old_r) ->
+      case roles_changed(old_r, new_r) {
+        True -> broadcast_round(connections, new_r)
+        False -> Nil
+      }
+    _, _ -> Nil
+  }
+}
+
+fn roles_changed(old_round: RoundState, new_round: RoundState) -> Bool {
+  old_round.imposter_id != new_round.imposter_id
+  || old_round.first_player_id != new_round.first_player_id
+}
+
+fn announce_leader_if_changed(
+  connections: Dict(process.Pid, PlayerConnection),
+  leaver: Player,
+) -> Nil {
+  case leaver.is_leader {
+    False -> Nil
+    True ->
+      case list.find(dict.values(connections), fn(c) { c.player.is_leader }) {
+        Ok(new_leader) ->
+          publish(connections, LeaderChangedMsg(new_leader.player.id))
+        Error(_) -> Nil
+      }
   }
 }
 
