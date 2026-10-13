@@ -10,7 +10,9 @@ import imposztor_front/model.{
 }
 import imposztor_front/msg.{type Msg}
 import lustre
-import lustre/attribute.{attribute, class, id, maxlength, placeholder, type_, value}
+import lustre/attribute.{
+  attribute, class, id, maxlength, placeholder, type_, value,
+}
 import lustre/effect.{type Effect}
 import lustre/element.{type Element, text}
 import lustre/element/html.{button, div, h1, h2, input, li, p, span, ul}
@@ -66,29 +68,10 @@ fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       effect.none(),
     )
 
-    msg.JoinClicked -> {
-      case model.socket {
-        option.Some(socket) -> {
-          let join_msg =
-            ws_api.Join(name: model.player_name)
-            |> encode_client_message
+    msg.JoinClicked ->
+      send_when_connected(model, ws_api.Join(name: model.player_name))
 
-          #(model, lustre_websocket.send(socket, join_msg))
-        }
-        option.None -> #(model, effect.none())
-      }
-    }
-
-    msg.StartRoundClicked -> {
-      case model.socket {
-        option.Some(socket) -> {
-          let start_msg = encode_client_message(ws_api.StartRound)
-
-          #(model, lustre_websocket.send(socket, start_msg))
-        }
-        option.None -> #(model, effect.none())
-      }
-    }
+    msg.StartRoundClicked -> send_when_connected(model, ws_api.StartRound)
 
     msg.WsConnected(socket) -> #(
       model.Model(
@@ -100,7 +83,11 @@ fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     )
 
     msg.WsDisconnected -> #(
-      model.Model(..model, connection_status: StatusDisconnected, socket: option.None),
+      model.Model(
+        ..model,
+        connection_status: StatusDisconnected,
+        socket: option.None,
+      ),
       effect.none(),
     )
 
@@ -114,14 +101,10 @@ fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       effect.none(),
     )
 
-    msg.WsMessage(ws_api.LeaderChanged(leader_id:)) -> {
-      // Check if we are the new leader
-      let is_leader = case model.players {
-        [first, ..] -> first.id == leader_id
-        [] -> False
-      }
-      #(model.Model(..model, is_leader: is_leader), effect.none())
-    }
+    msg.WsMessage(ws_api.LeaderChanged(leader_id:)) -> #(
+      model.Model(..model, is_leader: is_new_leader(model.players, leader_id)),
+      effect.none(),
+    )
 
     msg.WsMessage(ws_api.RoundStarted(word:, is_imposter:, is_first:)) -> #(
       model.Model(
@@ -145,14 +128,26 @@ fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
   }
 }
 
-fn encode_client_message(msg: ws_api.ClientMessage) -> String {
-  case msg {
-    ws_api.Join(name:) ->
-      json.object([#("type", json.string("join")), #("name", json.string(name))])
-      |> json.to_string
-    ws_api.StartRound ->
-      json.object([#("type", json.string("startRound"))])
-      |> json.to_string
+fn send_when_connected(
+  model: Model,
+  message: ws_api.ClientMessage,
+) -> #(Model, Effect(Msg)) {
+  case model.socket {
+    option.Some(socket) -> #(
+      model,
+      lustre_websocket.send(
+        socket,
+        json.to_string(ws_api.client_encoder(message)),
+      ),
+    )
+    option.None -> #(model, effect.none())
+  }
+}
+
+fn is_new_leader(players: List(player.Player), leader_id: String) -> Bool {
+  case players {
+    [first, ..] -> first.id == leader_id
+    [] -> False
   }
 }
 
@@ -241,26 +236,16 @@ fn view_game_screen(model: Model) -> Element(Msg) {
 }
 
 fn view_word_display(model: Model) -> Element(Msg) {
-  let word = case model.current_word {
-    option.Some(w) -> w
-    option.None -> ""
+  let word = option.unwrap(model.current_word, "")
+  let #(class_name, label) = case model.is_imposter {
+    True -> #("imposter", "Te vagy az IMPOSZTOR!")
+    False -> #("normal", "A szó:")
   }
 
-  let class_name = case model.is_imposter {
-    True -> "imposter"
-    False -> "normal"
-  }
-
-  div([id("wordDisplay"), class(class_name)], case model.is_imposter {
-    True -> [
-      span([class("label")], [text("Te vagy az IMPOSZTOR!")]),
-      span([class("word")], [text(word)]),
-    ]
-    False -> [
-      span([class("label")], [text("A szó:")]),
-      span([class("word")], [text(word)]),
-    ]
-  })
+  div([id("wordDisplay"), class(class_name)], [
+    span([class("label")], [text(label)]),
+    span([class("word")], [text(word)]),
+  ])
 }
 
 fn view_player_list(players: List(player.Player)) -> Element(Msg) {
@@ -268,12 +253,14 @@ fn view_player_list(players: List(player.Player)) -> Element(Msg) {
 }
 
 fn view_player_item(player: player.Player) -> Element(Msg) {
-  let classes = case player.is_leader, player.is_first {
+  li([class(player_item_classes(player))], [text(player.name)])
+}
+
+fn player_item_classes(player: player.Player) -> String {
+  case player.is_leader, player.is_first {
     True, True -> "leader first"
     True, False -> "leader"
     False, True -> "first"
     False, False -> ""
   }
-
-  li([class(classes)], [text(player.name)])
 }
