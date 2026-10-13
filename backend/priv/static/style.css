@@ -91,7 +91,7 @@ button:hover {
   background: #ff6b6b;
 }
 
-#lobbyScreen {
+.screen.lobby {
   background: rgba(255, 255, 255, 0.95);
   border-radius: 20px;
   padding: 30px 20px;
@@ -132,7 +132,7 @@ button:hover {
   text-align: center;
 }
 
-#gameScreen {
+.screen.game {
   justify-content: center;
   min-height: 60vh;
   text-align: center;
