@@ -12,6 +12,7 @@ pub type ConnectionStatus {
   StatusConnected
   StatusDisconnected
   StatusReconnecting(attempt: Int)
+  StatusFailed
 }
 
 pub type Model {

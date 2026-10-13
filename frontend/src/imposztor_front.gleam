@@ -8,7 +8,7 @@ import imposztor_common/player
 import imposztor_common/ws_api
 import imposztor_front/model.{
   type Model, GameScreen, JoinScreen, LobbyScreen, StatusConnected,
-  StatusDisconnected, StatusReconnecting,
+  StatusDisconnected, StatusFailed, StatusReconnecting,
 }
 import imposztor_front/msg.{type Msg}
 import lustre
@@ -22,9 +22,14 @@ import lustre/event.{on_click, on_input}
 import lustre_websocket
 import plinth/browser/location
 import plinth/browser/window
+import plinth/javascript/global
 import varasto
 
 const token_key = "net.bucsi.imposztor.token"
+
+const max_reconnect_attempts = 10
+
+const reconnect_delay_ms = 2000
 
 pub fn main() {
   let app = lustre.application(init, update, view)
@@ -113,17 +118,10 @@ fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
         connection_status: StatusConnected,
         socket: option.Some(socket),
       ),
-      effect.none(),
+      rejoin_effect(model, socket),
     )
 
-    msg.WsDisconnected -> #(
-      model.Model(
-        ..model,
-        connection_status: StatusDisconnected,
-        socket: option.None,
-      ),
-      effect.none(),
-    )
+    msg.WsDisconnected -> handle_disconnect(model)
 
     msg.WsMessage(ws_api.Joined(token:, is_leader:)) -> {
       save_token(token)
@@ -166,6 +164,11 @@ fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
 
     msg.WsError(_) -> #(model, effect.none())
 
+    msg.ReconnectRequested -> #(
+      model,
+      lustre_websocket.init(get_ws_url(), handle_ws_event),
+    )
+
     msg.NoOp -> #(model, effect.none())
   }
 }
@@ -190,6 +193,67 @@ fn is_new_leader(players: List(player.Player), leader_id: String) -> Bool {
   case players {
     [first, ..] -> first.id == leader_id
     [] -> False
+  }
+}
+
+fn handle_disconnect(model: Model) -> #(Model, Effect(Msg)) {
+  let model = model.Model(..model, socket: option.None)
+  case should_reconnect(model) {
+    False -> #(
+      model.Model(..model, connection_status: StatusDisconnected),
+      effect.none(),
+    )
+    True -> {
+      let next_attempt = case model.connection_status {
+        StatusReconnecting(attempt:) -> attempt + 1
+        _ -> 1
+      }
+      case next_attempt > max_reconnect_attempts {
+        True -> #(
+          model.Model(..model, connection_status: StatusFailed),
+          effect.none(),
+        )
+        False -> #(
+          model.Model(
+            ..model,
+            connection_status: StatusReconnecting(attempt: next_attempt),
+          ),
+          schedule_reconnect(),
+        )
+      }
+    }
+  }
+}
+
+fn should_reconnect(model: Model) -> Bool {
+  model.current_screen != JoinScreen && option.is_some(model.player_token)
+}
+
+fn schedule_reconnect() -> Effect(Msg) {
+  effect.from(fn(dispatch) {
+    global.set_timeout(reconnect_delay_ms, fn() {
+      dispatch(msg.ReconnectRequested)
+    })
+    Nil
+  })
+}
+
+fn rejoin_effect(
+  model: Model,
+  socket: lustre_websocket.WebSocket,
+) -> Effect(Msg) {
+  case should_reconnect(model) {
+    False -> effect.none()
+    True ->
+      lustre_websocket.send(
+        socket,
+        json.to_string(
+          ws_api.client_encoder(ws_api.Join(
+            name: model.player_name,
+            token: model.player_token,
+          )),
+        ),
+      )
   }
 }
 
@@ -222,6 +286,13 @@ fn view_connection_status(status: model.ConnectionStatus) -> Element(Msg) {
         span([class("status-icon")], [text("⚠️")]),
         span([class("status-text")], [
           text("Újracsatlakozás... (" <> int.to_string(attempt) <> ")"),
+        ]),
+      ])
+    StatusFailed ->
+      div([class("connection-status failed")], [
+        span([class("status-icon")], [text("❌")]),
+        span([class("status-text")], [
+          text("Kapcsolat megszakadt - töltsd újra az oldalt"),
         ]),
       ])
   }

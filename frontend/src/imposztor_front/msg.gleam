@@ -14,5 +14,6 @@ pub type Msg {
   WsError(String)
 
   // Internal
+  ReconnectRequested
   NoOp
 }

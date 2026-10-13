@@ -262,6 +262,14 @@ button:hover {
   display: none;
 }
 
+.connection-status.failed {
+  background: rgba(140, 20, 35, 0.97);
+}
+
+.connection-status.failed .status-icon {
+  animation: none;
+}
+
 .status-icon {
   font-size: 1.2rem;
   animation: pulse 1.5s infinite;
