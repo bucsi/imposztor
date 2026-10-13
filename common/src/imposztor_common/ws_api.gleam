@@ -41,6 +41,17 @@ pub fn client_decoder() {
   decode.one_of(join_decoder(), or: [start_round_decoder()])
 }
 
+pub fn client_encoder(msg: ClientMessage) -> Json {
+  case msg {
+    Join(name:) ->
+      json.object([
+        #(type_key, json.string("join")),
+        #("name", json.string(name)),
+      ])
+    StartRound -> json.object([#(type_key, json.string("startRound"))])
+  }
+}
+
 // Server -> Client messages
 pub type ServerMessage {
   Joined(is_leader: Bool)
