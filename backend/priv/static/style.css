@@ -126,6 +126,11 @@ button:hover {
   margin-left: 5px;
 }
 
+#playerList li.disconnected {
+  opacity: 0.4;
+  text-decoration: line-through;
+}
+
 #waitingText {
   color: #666;
   font-style: italic;
@@ -290,4 +295,9 @@ button:hover {
   content: "💩";
   font-size: 0.8rem;
   margin-left: 2px;
+}
+
+#gamePlayerList li.disconnected {
+  opacity: 0.4;
+  text-decoration: line-through;
 }

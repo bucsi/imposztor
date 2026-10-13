@@ -384,10 +384,14 @@ fn view_player_item(player: player.Player) -> Element(Msg) {
 }
 
 fn player_item_classes(player: player.Player) -> String {
-  case player.is_leader, player.is_first {
+  let role = case player.is_leader, player.is_first {
     True, True -> "leader first"
     True, False -> "leader"
     False, True -> "first"
     False, False -> ""
+  }
+  case player.connected {
+    True -> role
+    False -> role <> " disconnected"
   }
 }
