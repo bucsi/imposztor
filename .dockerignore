@@ -3,3 +3,6 @@ node_modules
 .github
 *.md
 .env*
+**/build/
+frontend/dist/
+backend/erl_crash.dump
