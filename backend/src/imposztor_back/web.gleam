@@ -31,6 +31,7 @@ pub fn init(
     }
   }
   |> mist.new()
+  |> mist.bind("0.0.0.0")
   |> mist.port(port)
   |> mist.start()
   |> result.map_error(fn(glisten_error) {
