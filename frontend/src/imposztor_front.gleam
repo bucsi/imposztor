@@ -415,7 +415,12 @@ fn view_word_display(model: Model) -> Element(Msg) {
 
   div([id("wordDisplay"), class(class_name)], [
     span([class("label")], [text(label)]),
-    span([class("word")], [text(word)]),
+    span([class("word")], [
+      case model.is_imposter && !model.is_first_player {
+        True -> text("Súgószót csak akkor kapsz, ha te kezdesz.")
+        False -> text(word)
+      },
+    ]),
   ])
 }
 

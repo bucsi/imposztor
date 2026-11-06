@@ -200,9 +200,10 @@ fn send_round_in_progress(
 fn round_message_for(round: RoundState, player_id: PlayerId) -> PublishMessage {
   let is_imposter = round.imposter_id == player_id
   let is_first = round.first_player_id == player_id
-  let word = case is_imposter {
-    True -> round.similar_word
-    False -> round.word
+  let word = case is_imposter, is_first {
+    True, True -> round.similar_word
+    True, False -> ""
+    False, _ -> round.word
   }
   RoundStartedMsg(word:, is_imposter:, is_first:)
 }
