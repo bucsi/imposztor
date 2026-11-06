@@ -185,7 +185,10 @@ fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     )
 
     msg.WsMessage(ws_api.LeaderChanged(leader_id:)) -> #(
-      model.Model(..model, is_leader: is_new_leader(model.players, leader_id)),
+      model.Model(
+        ..model,
+        is_leader: model.player_token == option.Some(leader_id),
+      ),
       effect.none(),
     )
 
@@ -244,13 +247,6 @@ fn send_when_connected(
       ),
     )
     option.None -> #(model, effect.none())
-  }
-}
-
-fn is_new_leader(players: List(player.Player), leader_id: String) -> Bool {
-  case players {
-    [first, ..] -> first.id == leader_id
-    [] -> False
   }
 }
 
