@@ -68,10 +68,18 @@ fn token_storage() -> Result(varasto.TypedStorage(String), Nil) {
 fn load_string(key: String) -> option.Option(String) {
   case token_storage() {
     Ok(typed) ->
-      varasto.get(typed, key)
-      |> result.map(option.Some)
-      |> result.unwrap(option.None)
-    Error(_) -> option.None
+      case varasto.get(typed, key) {
+        Ok(value) -> option.Some(value)
+        Error(varasto.NotFound) -> option.None
+        Error(varasto.DecodeError(_)) -> {
+          console.error("Failed to decode localStorage value for key: " <> key)
+          option.None
+        }
+      }
+    Error(_) -> {
+      console.error("localStorage is unavailable; could not read key: " <> key)
+      option.None
+    }
   }
 }
 
@@ -82,17 +90,26 @@ fn load_raw(key: String) -> option.Option(String) {
         Ok("") | Error(_) -> option.None
         Ok(value) -> option.Some(value)
       }
-    Error(_) -> option.None
+    Error(_) -> {
+      console.error("localStorage is unavailable; could not read key: " <> key)
+      option.None
+    }
   }
 }
 
 fn save_string(key: String, value: String) -> Nil {
   case token_storage() {
     Ok(typed) -> {
-      let _ = varasto.set(typed, key, value)
+      case varasto.set(typed, key, value) {
+        Ok(Nil) -> Nil
+        Error(Nil) ->
+          console.error("Failed to write localStorage value for key: " <> key)
+      }
+    }
+    Error(_) -> {
+      console.error("localStorage is unavailable; could not write key: " <> key)
       Nil
     }
-    Error(_) -> Nil
   }
 }
 

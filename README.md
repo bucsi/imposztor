@@ -7,3 +7,21 @@
 - One random player is selected who will go first and they receive a note.
 - The app should be simple to host.
 - Make no mistakes.
+
+## Build and deploy
+
+The Docker image contains the Erlang backend and the built browser frontend. Pull
+requests targeting `main` build the image to verify it, without publishing it.
+Every update to `main`—whether a PR merge, a direct Git push, or a commit made in
+GitHub—publishes `ghcr.io/bucsi/imposztor:latest` and an immutable commit-SHA tag.
+
+To run the image, configure the host with:
+
+- `PORT=3000` (the image default; configure the host to route to this port)
+- `SECRET_KEY_BASE` set to a unique, securely generated secret
+
+The service uses WebSockets at `/ws`, so the host must support WebSocket
+connections. Game state is held in memory and is lost when the process restarts.
+Publishing to GHCR does not itself run the app; configure your hosting provider
+to deploy the published image when it changes. If the GHCR package is private,
+give the host credentials with `read:packages` access.
